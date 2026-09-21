@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>預算視覺化儀表板</title>
+    <!-- 引入 Chart.js 與 PapaParse -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <style>
+        /* --- 基本排版設定 --- */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: transparent;
+            color: #333;
+            padding: 10px;
+            margin: 0;
+        }
+
+        .dashboard {
+            max-width: 800px;
+            width: 100%;
+            margin: 0 auto;
+            background: #fff;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            box-sizing: border-box;
+        }
+
+        h2 {
+            text-align: center;
+            font-size: 1.5rem;
+            margin-top: 0;
+        }
+
+        /* --- 篩選區塊 --- */
+        .filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #e9ecef;
+            border-radius: 8px;
+        }
+
+        .filter-item {
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .filter-item label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        select {
+            width: 100%;
+            padding: 8px 12px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+
+        /* --- 圖表區塊 (加入了分離式圖例設計) --- */
+        .charts-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .chart-container {
+            background: #fff;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+        }
+
+        .chart-full {
+            width: 100%;
+        }
+
+        .chart-half {
+            width: calc(50% - 7.5px);
+        }
+
+        /* 鎖定畫布的絕對高度，確保每個圓餅圖能繪製的空間完全一樣大 */
+        .canvas-wrapper {
+            position: relative;
+            width: 100%;
+            height: 250px;
+        }
+
+        /* 自訂 HTML 圖例樣式 */
+        .custom-legend {
+            width: 100%;
+            margin-top: 15px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+            font-size: 0.85rem;
+            color: #555;
+        }
+
+        .custom-legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .custom-legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 2px;
+            display: inline-block;
+        }
+
+        /* --- 表格與標籤設計 --- */
+        .table-container h3 {
+            margin-bottom: 10px;
+            font-size: 1.2rem;
+        }
+
+        .table-responsive {
+            width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        table {
+            width: 100%;
+            min-width: 600px;
+            border-collapse: collapse;
+        }
+
+        th,
+        td {
+            padding: 12px 10px;
+            border-bottom: 1px solid #ddd;
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        th {
+            background-color: #0056b3;
+            color: white;
+            text-align: center;
+        }
+
+        td:first-child {
+            text-align: left;
+            white-space: normal;
+            min-width: 180px;
+        }
+
+        .positive {
+            color: red;
+            font-weight: bold;
+        }
+
+        .negative {
+            color: green;
+            font-weight: bold;
+        }
+
+        .agency-tag {
+            display: inline-block;
+            background-color: #e2e8f0;
+            color: #475569;
+            font-size: 0.75rem;
+            padding: 3px 8px;
+            border-radius: 12px;
+            margin-top: 6px;
+            font-weight: normal;
+        }
+
+        .sortable {
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.2s;
+        }
+
+        .sortable:hover {
+            background-color: #004494;
+        }
+
+        .sort-icon {
+            font-size: 0.8rem;
+            margin-left: 4px;
+            color: #b3d4fc;
+        }
+
+        /* --- 分頁按鈕 --- */
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            margin-top: 15px;
+            font-size: 0.95rem;
+        }
+
+        .pagination button {
+            padding: 6px 15px;
+            border: 1px solid #ccc;
+            background: #fff;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .pagination button:hover:not(:disabled) {
+            background: #e9ecef;
+        }
+
+        .pagination button:disabled {
+            background: #f4f4f4;
+            color: #aaa;
+            cursor: not-allowed;
+        }
+
+        /* --- 手機版 RWD --- */
+        /* --- 手機版 RWD (卡片式表格排版) --- */
+        /* --- 手機版 RWD (卡片式表格排版) --- */
+        @media (max-width: 600px) {
+            .dashboard {
+                padding: 15px 10px;
+            }
+
+            .filter-item {
+                flex: none;
+                width: 100%;
+            }
+
+            .chart-half {
+                width: 100%;
+            }
+
+            .canvas-wrapper {
+                height: 220px;
+            }
+
+            /* 1. 隱藏橫向捲軸，取消表格預設限制 */
+            .table-responsive {
+                overflow-x: hidden;
+            }
+
+            table,
+            thead,
+            tbody,
+            th,
+            td,
+            tr {
+                display: block;
+                width: 100%;
+                box-sizing: border-box;
+            }
+
+            table {
+                min-width: 100%;
+            }
+
+            /* ================= 新增/修改：排序按鈕優化 ================= */
+            thead {
+                margin-bottom: 15px;
+            }
+
+            /* 加入引導提示文字 */
+            thead tr::before {
+                content: "💡 點擊下方按鈕切換卡片排序：";
+                display: block;
+                width: 100%;
+                font-size: 0.9rem;
+                color: #555;
+                margin-bottom: 10px;
+                text-align: left;
+                font-weight: bold;
+            }
+
+            thead tr {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+
+            /* 隱藏不需要的表頭：第1個(工作項目) 跟 第3個(115年預算) */
+            th:first-child,
+            th:nth-child(3) {
+                display: none;
+            }
+
+            /* 排序按鈕預設為「未選中狀態」 (淺灰底、藍字) */
+            th.sortable {
+                flex: 1 1 calc(33.33% - 6px);
+                /* 讓剩下的3個按鈕並排 */
+                padding: 10px 4px;
+                font-size: 0.85rem;
+                border-radius: 6px;
+                background-color: #f1f5f9;
+                color: #0056b3;
+                border: 1px solid #cbd5e1;
+                text-align: center;
+                box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+            }
+
+            /* 排序按鈕的「已選中狀態」 (深藍底、白字) - 由JS動態切換 */
+            th.sortable.active-sort {
+                background-color: #0056b3;
+                color: white;
+                border-color: #0056b3;
+            }
+
+            th.sortable.active-sort .sort-icon {
+                color: #b3d4fc;
+            }
+
+            /* 微調箭頭顏色 */
+            /* ========================================================= */
+
+            /* 3. 資料列轉化為「卡片」 */
+            tbody tr {
+                margin-bottom: 15px;
+                background: #fff;
+                border: 1px solid #ccc;
+                border-radius: 8px;
+                box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+                padding: 15px;
+            }
+
+            /* 4. 卡片內的資料列設計 */
+            td {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                border-bottom: 1px dashed #eee;
+                padding: 10px 0;
+                white-space: normal;
+            }
+
+            td:last-child {
+                border-bottom: none;
+                padding-bottom: 0;
+            }
+
+            td:first-child {
+                display: block;
+                text-align: left;
+                border-bottom: 2px solid #0056b3;
+                padding-bottom: 10px;
+                margin-bottom: 5px;
+                font-weight: bold;
+                font-size: 1.1rem;
+            }
+
+            td:not(:first-child)::before {
+                content: attr(data-label);
+                font-weight: bold;
+                color: #666;
+                font-size: 0.9rem;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="dashboard">
+        <h2>年度預算執行分析儀表板</h2>
+
+        <div class="filters">
+            <div class="filter-item">
+                <label for="level1Filter">主管機關：</label>
+                <select id="level1Filter">
+                    <option value="all">全部 (未篩選)</option>
+                </select>
+            </div>
+            <div class="filter-item">
+                <label for="level2Filter">歲出機關：</label>
+                <select id="level2Filter">
+                    <option value="all">請先選擇主管機關</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="charts-row">
+            <!-- 長條圖 -->
+            <div class="chart-container chart-full">
+                <div class="canvas-wrapper"><canvas id="barChart"></canvas></div>
+            </div>
+            <!-- 圓餅圖 1 -->
+            <div class="chart-container chart-half">
+                <div class="canvas-wrapper"><canvas id="pieChart1"></canvas></div>
+                <!-- 獨立出來的 HTML 圖例容器 -->
+                <div id="legend1" class="custom-legend"></div>
+            </div>
+            <!-- 圓餅圖 2 -->
+            <div class="chart-container chart-half">
+                <div class="canvas-wrapper"><canvas id="pieChart2"></canvas></div>
+                <!-- 獨立出來的 HTML 圖例容器 -->
+                <div id="legend2" class="custom-legend"></div>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <h3>工作項目預算明細（單位：千元）</h3>
+            <div class="table-responsive">
+                <table id="budgetTable">
+                    <thead>
+                        <tr>
+                            <th>工作項目</th>
+                            <th class="sortable" onclick="handleSort('current')">116年度預算 <span class="sort-icon"
+                                    id="sort-current">▼</span></th>
+                            <th>115年度預算數</th>
+                            <th class="sortable" onclick="handleSort('diff')">相差<span class="sort-icon"
+                                    id="sort-diff">↕</span></th>
+                            <th class="sortable" onclick="handleSort('growthRate')">成長幅度 (%) <span class="sort-icon"
+                                    id="sort-growthRate">↕</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- 資料由 JS 動態生成 -->
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="pagination">
+                <button id="prevPage" onclick="changePage(-1)">上一頁</button>
+                <span id="pageInfo">第 1 頁 / 共 1 頁</span>
+                <button id="nextPage" onclick="changePage(1)">下一頁</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 設定圖表全域基礎字體大小
+        Chart.defaults.font.size = 13;
+        Chart.defaults.font.family = "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif";
+
+        let barChartInstance = null;
+        let pieChart1Instance = null;
+        let pieChart2Instance = null;
+        let rawData = [];
+
+        let currentSort = { column: 'current', order: 'desc' };
+        let currentPage = 1;
+        let rowsPerPage = window.innerWidth <= 600 ? 5 : 10;
+
+        // ====== 將數字 * 1000 並轉換為中文單位的函式 ======
+        // ====== 將數字 * 1000 並轉換為「最大單位後小數點一位」的函式 ======
+        function formatChineseMoney(value) {
+            if (value === 0 || isNaN(value)) return '0元';
+
+            let isNegative = value < 0;
+            let val = Math.abs(value) * 1000; // 依照需求先乘以 1000
+
+            let num = val;
+            let unit = '';
+
+            // 判斷最大單位
+            if (val >= 1000000000000) {
+                num = val / 1000000000000;
+                unit = '兆';
+            } else if (val >= 100000000) {
+                num = val / 100000000;
+                unit = '億';
+            } else if (val >= 10000) {
+                num = val / 10000;
+                unit = '萬';
+            }
+
+            // toFixed(1) 進行四捨五入到小數點後第一位
+            // parseFloat 會自動幫我們把 2500.0 這種尾數為 0 的情況轉回整數 2500
+            let formattedNum = parseFloat(num.toFixed(1));
+
+            return (isNegative ? '-' : '') + formattedNum + unit + '元';
+        }
+
+        const csvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRB5aBuge0B9U5PyCoJAfSGOqRniKnOIJbegylj7HnKNoB3xIfSU2g3FIJprnV5LXmgJMx0GFwmqe3G/pub?gid=956073640&single=true&output=csv';
+
+        Papa.parse(csvUrl, {
+            download: true, header: true, skipEmptyLines: true,
+            transformHeader: function (header) { return header.trim(); },
+            complete: function (results) {
+                const cleanNumber = (val) => {
+                    if (!val) return 0;
+                    return parseInt(String(val).replace(/[,$\s]/g, ''), 10) || 0;
+                };
+
+                rawData = results.data.map(row => {
+                    // 建立處理新格式的邏輯
+                    let usageRaw = row['用途別'] ? String(row['用途別']).trim() : '';
+                    let usageObj = {};
+
+                    // 判斷是否為「人事費:703014|業務費:280469...」的格式
+                    if (usageRaw.includes(':') && usageRaw.includes('|')) {
+                        usageRaw.split('|').forEach(pair => {
+                            let parts = pair.split(':');
+                            if (parts.length === 2) {
+                                let key = parts[0].trim();
+                                let val = parseInt(parts[1].replace(/[,$\s]/g, ''), 10) || 0;
+                                usageObj[key] = val;
+                            }
+                        });
+                    } else {
+                        // 如果沒有冒號，當作舊格式 (純字串) 處理
+                        usageObj = usageRaw || '未分類';
+                    }
+
+                    return {
+                        level1: row['機關主管'] ? String(row['機關主管']).trim() : '未分類',
+                        level2: row['歲出機關'] ? String(row['歲出機關']).trim() : '未分類',
+                        workItem: row['工作計畫'] ? String(row['工作計畫']).trim() : '',
+                        policy: row['政事別大分類'] ? String(row['政事別大分類']).trim() : '未分類',
+                        usage: usageObj, // 這裡已經變成 { '人事費': 703014, '業務費': 280469 } 的格式
+                        currentYear: cleanNumber(row['116年度預算案']),
+                        lastYear: cleanNumber(row['115年度預算數'])
+                    };
+                }).filter(d => d.workItem !== '');
+
+                initFilters();
+                updateDashboard();
+            }
+        });
+
+        function initFilters() {
+            const l1Select = document.getElementById('level1Filter');
+            const l2Select = document.getElementById('level2Filter');
+            const level1Set = new Set(rawData.map(d => d.level1));
+
+            l1Select.innerHTML = '<option value="all">全部 (未篩選)</option>';
+            level1Set.forEach(val => l1Select.innerHTML += `<option value="${val}">${val}</option>`);
+            l2Select.innerHTML = '<option value="all">請先選擇主管機關</option>';
+            l2Select.disabled = true;
+
+            l1Select.addEventListener('change', () => { updateLevel2Options(); currentPage = 1; updateDashboard(); });
+            l2Select.addEventListener('change', () => { currentPage = 1; updateDashboard(); });
+        }
+
+        function updateLevel2Options() {
+            const l1 = document.getElementById('level1Filter').value;
+            const l2Select = document.getElementById('level2Filter');
+            l2Select.innerHTML = '';
+            if (l1 === 'all') {
+                l2Select.innerHTML = '<option value="all">請先選擇主管機關</option>';
+                l2Select.disabled = true;
+            } else {
+                l2Select.disabled = false;
+                l2Select.innerHTML = '<option value="all">全部 (未篩選)</option>';
+                const filteredLevel2Set = new Set(rawData.filter(d => d.level1 === l1).map(d => d.level2));
+                filteredLevel2Set.forEach(val => l2Select.innerHTML += `<option value="${val}">${val}</option>`);
+            }
+        }
+
+        function updateDashboard() {
+            const l1 = document.getElementById('level1Filter').value;
+            const l2 = document.getElementById('level2Filter').value;
+
+            let filteredData = rawData;
+            if (l1 !== 'all') filteredData = filteredData.filter(d => d.level1 === l1);
+            if (l2 !== 'all' && l2 !== '請先選擇主管機關') filteredData = filteredData.filter(d => d.level2 === l2);
+
+            renderBarChart(filteredData);
+            renderPieCharts(filteredData);
+            renderTable(filteredData);
+        }
+
+        function handleSort(column) {
+            if (currentSort.column === column) {
+                currentSort.order = currentSort.order === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSort.column = column;
+                currentSort.order = 'desc';
+            }
+            currentPage = 1;
+            updateDashboard();
+        }
+
+        function changePage(step) { currentPage += step; updateDashboard(); }
+
+        // ====== 產生獨立 HTML 圖例的通用函數 ======
+        function renderCustomLegend(chartInstance, containerId) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = ''; // 清空舊圖例
+            const data = chartInstance.data;
+
+            data.labels.forEach((label, index) => {
+                const color = data.datasets[0].backgroundColor[index];
+                const item = document.createElement('div');
+                item.className = 'custom-legend-item';
+                item.innerHTML = `<span class="custom-legend-color" style="background-color: ${color};"></span><span>${label}</span>`;
+                container.appendChild(item);
+            });
+        }
+        // ===========================================
+
+        function renderBarChart(data) {
+            const totalCurrent = data.reduce((sum, d) => sum + d.currentYear, 0);
+            const totalLast = data.reduce((sum, d) => sum + d.lastYear, 0);
+            if (barChartInstance) barChartInstance.destroy();
+            const ctx = document.getElementById('barChart').getContext('2d');
+            barChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['總預算比較'],
+                    datasets: [
+                        { label: '116年度預算', data: [totalCurrent], backgroundColor: '#0056b3' },
+                        { label: '115年度預算', data: [totalLast], backgroundColor: '#aebfbe' }
+                    ]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: {
+                        title: { display: true, text: '兩年度預算總額比較', font: { size: 15 } },
+                        // 新增 Tooltip 格式化
+                        tooltip: {
+                            callbacks: {
+                                label: function (context) {
+                                    return context.dataset.label + ': ' + formatChineseMoney(context.raw);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderPieCharts(data) {
+            // 1. 政事別 (原本的計算方式，依靠 currentYear)
+            const policyData = data.reduce((acc, curr) => {
+                acc[curr.policy] = (acc[curr.policy] || 0) + curr.currentYear;
+                return acc;
+            }, {});
+            
+            // 2. 用途別 (支援新的拆分加總方式)
+            const usageData = data.reduce((acc, curr) => {
+                if (typeof curr.usage === 'object') {
+                    // 如果是拆分格式 { '人事費': 703014, '業務費': 280469 }
+                    for (const [key, val] of Object.entries(curr.usage)) {
+                        acc[key] = (acc[key] || 0) + val;
+                    }
+                } else {
+                    // 如果還是舊格式單一字串
+                    acc[curr.usage] = (acc[curr.usage] || 0) + curr.currentYear;
+                }
+                return acc;
+            }, {});
+
+            // 3. 過濾掉加總為 0 的項目 (例如：債務費:0，讓圖例不會出現空項目)
+            Object.keys(policyData).forEach(key => { if (policyData[key] === 0) delete policyData[key]; });
+            Object.keys(usageData).forEach(key => { if (usageData[key] === 0) delete usageData[key]; });
+
+            const colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#C9CBCF', '#E7E9ED', '#B39DDB', '#80CBC4'];
+
+            // 繪製圓餅圖 1 (政事別)
+            if (pieChart1Instance) pieChart1Instance.destroy();
+            pieChart1Instance = new Chart(document.getElementById('pieChart1').getContext('2d'), {
+                type: 'pie',
+                data: { labels: Object.keys(policyData), datasets: [{ data: Object.values(policyData), backgroundColor: colors }] },
+                options: { 
+                    responsive: true, maintainAspectRatio: false, 
+                    plugins: { 
+                        title: { display: true, text: '政事別比例 (依116年度)', font: { size: 15 } },
+                        legend: { display: false },
+                        tooltip: { callbacks: { label: function(context) { return context.label + ': ' + formatChineseMoney(context.raw); } } }
+                    } 
+                }
+            });
+            renderCustomLegend(pieChart1Instance, 'legend1'); 
+
+            // 繪製圓餅圖 2 (用途別)
+            if (pieChart2Instance) pieChart2Instance.destroy();
+            pieChart2Instance = new Chart(document.getElementById('pieChart2').getContext('2d'), {
+                type: 'pie',
+                data: { labels: Object.keys(usageData), datasets: [{ data: Object.values(usageData), backgroundColor: colors }] },
+                options: { 
+                    responsive: true, maintainAspectRatio: false, 
+                    plugins: { 
+                        title: { display: true, text: '用途別比例 (依116年度)', font: { size: 15 } },
+                        legend: { display: false },
+                        tooltip: { callbacks: { label: function(context) { return context.label + ': ' + formatChineseMoney(context.raw); } } }
+                    } 
+                }
+            });
+            renderCustomLegend(pieChart2Instance, 'legend2'); 
+        }
+
+        function renderTable(data) {
+            const tbody = document.querySelector('#budgetTable tbody');
+            tbody.innerHTML = '';
+
+            const aggregatedItems = {};
+            data.forEach(d => {
+                const key = d.workItem + '|' + d.level2;
+                if (!aggregatedItems[key]) {
+                    aggregatedItems[key] = { item: d.workItem, agency: d.level2, current: 0, last: 0 };
+                }
+                aggregatedItems[key].current += d.currentYear;
+                aggregatedItems[key].last += d.lastYear;
+            });
+
+            let tableData = Object.values(aggregatedItems).map(row => {
+                row.diff = row.current - row.last;
+                if (row.last === 0) {
+                    row.growthRate = row.current > 0 ? Infinity : 0;
+                } else {
+                    row.growthRate = (row.diff / row.last) * 100;
+                }
+                return row;
+            });
+
+            tableData.sort((a, b) => {
+                let valA = a[currentSort.column];
+                let valB = b[currentSort.column];
+                if (currentSort.order === 'asc') return valA > valB ? 1 : -1;
+                return valA < valB ? 1 : -1;
+            });
+
+            // 4. 更新表頭的排序圖示 (▲/▼/↕)
+            document.getElementById('sort-current').textContent = currentSort.column === 'current' ? (currentSort.order === 'asc' ? '▲' : '▼') : '↕';
+            document.getElementById('sort-diff').textContent = currentSort.column === 'diff' ? (currentSort.order === 'asc' ? '▲' : '▼') : '↕';
+            document.getElementById('sort-growthRate').textContent = currentSort.column === 'growthRate' ? (currentSort.order === 'asc' ? '▲' : '▼') : '↕';
+
+            // ================= 新增：切換選中的按鈕顏色 =================
+            // 先清除所有按鈕的 active-sort 狀態
+            document.querySelectorAll('th.sortable').forEach(th => th.classList.remove('active-sort'));
+            // 根據目前的排序條件，幫對應的表頭加上 active-sort
+            if (currentSort.column === 'current') document.getElementById('sort-current').parentElement.classList.add('active-sort');
+            if (currentSort.column === 'diff') document.getElementById('sort-diff').parentElement.classList.add('active-sort');
+            if (currentSort.column === 'growthRate') document.getElementById('sort-growthRate').parentElement.classList.add('active-sort');
+            // ==========================================================
+
+            const totalPages = Math.ceil(tableData.length / rowsPerPage) || 1;
+            if (currentPage > totalPages) currentPage = totalPages;
+            const startIdx = (currentPage - 1) * rowsPerPage;
+            const paginatedData = tableData.slice(startIdx, startIdx + rowsPerPage);
+
+            document.getElementById('pageInfo').textContent = `第 ${currentPage} 頁 / 共 ${totalPages} 頁`;
+            document.getElementById('prevPage').disabled = currentPage === 1;
+            document.getElementById('nextPage').disabled = currentPage === totalPages || totalPages === 0;
+
+            paginatedData.forEach(row => {
+                const diffClass = row.diff > 0 ? 'positive' : (row.diff < 0 ? 'negative' : '');
+                const sign = row.diff > 0 ? '+' : '';
+                const agencyTag = `<div class="agency-tag">${row.agency}</div>`;
+
+                let growthText = '';
+                let growthClass = diffClass;
+                if (row.growthRate === Infinity) {
+                    growthText = '新增';
+                    growthClass = 'positive';
+                } else {
+                    growthText = sign + row.growthRate.toFixed(2) + '%';
+                }
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${row.item}<br>${agencyTag}</td>
+                    <td data-label="116年度預算">${row.current.toLocaleString()}</td>
+                    <td data-label="115年度預算">${row.last.toLocaleString()}</td>
+                    <td data-label="相差" class="${diffClass}">${sign}${row.diff.toLocaleString()}</td>
+                    <td data-label="成長幅度" class="${growthClass}">${growthText}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        };
+        // ====== 監聽螢幕尺寸變更 ======
+        window.addEventListener('resize', () => {
+            const newRowsPerPage = window.innerWidth <= 600 ? 5 : 10;
+
+            // 如果斷點發生改變（例如從電腦版縮小變成手機版），才重新渲染表格
+            if (newRowsPerPage !== rowsPerPage) {
+                rowsPerPage = newRowsPerPage;
+                currentPage = 1; // 切換筆數時，強制回到第 1 頁，避免頁碼超出範圍
+                updateDashboard();
+            }
+        });
+    </script>
+</body>
+
+</html>
