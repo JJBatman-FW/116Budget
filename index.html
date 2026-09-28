@@ -656,7 +656,7 @@
             Object.keys(policyData).forEach(key => { if (policyData[key] === 0) delete policyData[key]; });
             Object.keys(usageData).forEach(key => { if (usageData[key] === 0) delete usageData[key]; });
 
-            // ================= 新增：改回依「數值比例」自動計算漸層色的函式 =================
+            // 依「數值比例」自動計算漸層色的函式
             function generateValueBasedColors(dataObj, baseColorHex) {
                 const values = Object.values(dataObj);
                 const maxVal = Math.max(...values, 1); // 找出最大值作為 100% 基準
@@ -686,9 +686,8 @@
             // 動態產生兩組依「數值比例」遞減的漸層色陣列
             // 左邊：以 #EC9A29 為最高值主色
             const colors1 = generateValueBasedColors(policyData, '#EC9A29');
-            // 右邊：保留新的 #0F8B8D 為最高值主色
-            const colors2 = generateValueBasedColors(usageData, '#0F8B8D');
-            // =====================================================================
+            // 右邊：換成新的 #70AE6E (莫蘭迪綠) 為最高值主色
+            const colors2 = generateValueBasedColors(usageData, '#70AE6E');
 
             // 繪製圓餅圖 1 (政事別)
             if (pieChart1Instance) pieChart1Instance.destroy();
