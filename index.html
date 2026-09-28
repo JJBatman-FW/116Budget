@@ -153,7 +153,7 @@
         }
 
         th {
-            background-color: #0056b3;
+            background-color: #004E97;
             color: white;
             text-align: center;
         }
@@ -386,7 +386,7 @@
                 </select>
             </div>
             <div class="filter-item">
-                <label for="level2Filter">歲出機關：</label>
+                <label for="level2Filter">單位機關：</label>
                 <select id="level2Filter">
                     <option value="all">請先選擇主管機關</option>
                 </select>
@@ -419,12 +419,12 @@
                     <thead>
                         <tr>
                             <th>工作項目</th>
-                            <th class="sortable" onclick="handleSort('current')">116年度預算 <span class="sort-icon"
+                            <th class="sortable" onclick="handleSort('current')">116年度預算數 <span class="sort-icon"
                                     id="sort-current">▼</span></th>
                             <th>115年度預算數</th>
-                            <th class="sortable" onclick="handleSort('diff')">相差<span class="sort-icon"
+                            <th class="sortable" onclick="handleSort('diff')">增減（千元）<span class="sort-icon"
                                     id="sort-diff">↕</span></th>
-                            <th class="sortable" onclick="handleSort('growthRate')">成長幅度 (%) <span class="sort-icon"
+                            <th class="sortable" onclick="handleSort('growthRate')">增減 (%) <span class="sort-icon"
                                     id="sort-growthRate">↕</span></th>
                         </tr>
                     </thead>
@@ -614,7 +614,7 @@
                 data: {
                     labels: ['總預算比較'],
                     datasets: [
-                        { label: '116年度預算', data: [totalCurrent], backgroundColor: '#0056b3' },
+                        { label: '116年度預算', data: [totalCurrent], backgroundColor: '#004E97' },
                         { label: '115年度預算', data: [totalLast], backgroundColor: '#aebfbe' }
                     ]
                 },
@@ -637,37 +637,67 @@
         }
 
         function renderPieCharts(data) {
-            // 1. 政事別 (原本的計算方式，依靠 currentYear)
             const policyData = data.reduce((acc, curr) => {
                 acc[curr.policy] = (acc[curr.policy] || 0) + curr.currentYear;
                 return acc;
             }, {});
             
-            // 2. 用途別 (支援新的拆分加總方式)
             const usageData = data.reduce((acc, curr) => {
                 if (typeof curr.usage === 'object') {
-                    // 如果是拆分格式 { '人事費': 703014, '業務費': 280469 }
                     for (const [key, val] of Object.entries(curr.usage)) {
                         acc[key] = (acc[key] || 0) + val;
                     }
                 } else {
-                    // 如果還是舊格式單一字串
                     acc[curr.usage] = (acc[curr.usage] || 0) + curr.currentYear;
                 }
                 return acc;
             }, {});
 
-            // 3. 過濾掉加總為 0 的項目 (例如：債務費:0，讓圖例不會出現空項目)
             Object.keys(policyData).forEach(key => { if (policyData[key] === 0) delete policyData[key]; });
             Object.keys(usageData).forEach(key => { if (usageData[key] === 0) delete usageData[key]; });
 
-            const colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#C9CBCF', '#E7E9ED', '#B39DDB', '#80CBC4'];
+            // ================= 新增：改回依「數值比例」自動計算漸層色的函式 =================
+            function generateValueBasedColors(dataObj, baseColorHex) {
+                const values = Object.values(dataObj);
+                const maxVal = Math.max(...values, 1); // 找出最大值作為 100% 基準
+                
+                // 將主色 Hex 轉換為 RGB 數值
+                const rBase = parseInt(baseColorHex.substring(1, 3), 16);
+                const gBase = parseInt(baseColorHex.substring(3, 5), 16);
+                const bBase = parseInt(baseColorHex.substring(5, 7), 16);
+                
+                // 確保回傳的顏色陣列順序與 Chart.js 讀取 labels 的順序一致
+                return Object.keys(dataObj).map(key => {
+                    const val = dataObj[key];
+                    const ratio = val / maxVal;
+                    
+                    // 最低濃度維持 15% (0.15)，數值越小顏色越接近純白
+                    const intensity = 0.15 + (ratio * 0.85);
+                    
+                    // 將主色與純白色 (255, 255, 255) 依照強度比例進行混色
+                    const r = Math.round(255 + intensity * (rBase - 255));
+                    const g = Math.round(255 + intensity * (gBase - 255));
+                    const b = Math.round(255 + intensity * (bBase - 255));
+                    
+                    return `rgb(${r}, ${g}, ${b})`;
+                });
+            }
+
+            // 動態產生兩組依「數值比例」遞減的漸層色陣列
+            // 左邊：以 #EC9A29 為最高值主色
+            const colors1 = generateValueBasedColors(policyData, '#EC9A29');
+            // 右邊：保留新的 #0F8B8D 為最高值主色
+            const colors2 = generateValueBasedColors(usageData, '#0F8B8D');
+            // =====================================================================
 
             // 繪製圓餅圖 1 (政事別)
             if (pieChart1Instance) pieChart1Instance.destroy();
             pieChart1Instance = new Chart(document.getElementById('pieChart1').getContext('2d'), {
                 type: 'pie',
-                data: { labels: Object.keys(policyData), datasets: [{ data: Object.values(policyData), backgroundColor: colors }] },
+                data: { 
+                    labels: Object.keys(policyData), 
+                    datasets: [{ data: Object.values(policyData), backgroundColor: colors1 }] 
+                },
                 options: { 
                     responsive: true, maintainAspectRatio: false, 
                     plugins: { 
@@ -683,7 +713,10 @@
             if (pieChart2Instance) pieChart2Instance.destroy();
             pieChart2Instance = new Chart(document.getElementById('pieChart2').getContext('2d'), {
                 type: 'pie',
-                data: { labels: Object.keys(usageData), datasets: [{ data: Object.values(usageData), backgroundColor: colors }] },
+                data: { 
+                    labels: Object.keys(usageData), 
+                    datasets: [{ data: Object.values(usageData), backgroundColor: colors2 }] 
+                },
                 options: { 
                     responsive: true, maintainAspectRatio: false, 
                     plugins: { 
